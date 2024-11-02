@@ -1,0 +1,684 @@
+// ==UserScript==
+// @name          Fixed Format Palette ⭐
+// @namespace  http://tampermonkey.net/
+// @version      6.5
+// @description  編集枠に定型表示を自動記入するツール
+// @author       Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @exclude      https://blog.ameba.jp/ucs/entry/srventrylist.do*
+// @grant         none
+// ==/UserScript==
+
+
+let retry=0;
+let interval=setInterval(wait_target, 100);
+function wait_target(){
+    retry++;
+    if(retry>10){ // リトライ制限 10回 1sec
+        clearInterval(interval); }
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    if(target){
+        clearInterval(interval);
+        main(); }}
+
+
+
+function main(){
+    let editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+    let iframe_doc;
+    let iframe_html;
+    if(editor_iframe){
+        iframe_doc=editor_iframe.contentWindow.document;
+        iframe_html=iframe_doc.querySelector('html'); }
+    let format_data;
+    let bank;
+    let now_bank=0;
+
+    let mode=-1; // 通常表示Write=0・Record=1  Html表示Record=2  Backup=3
+    let select_format;
+    let color_data; // 枠色
+
+    let ua=0; // Chromeの場合のフラグ
+    let agent=window.navigator.userAgent.toLowerCase();
+    if(agent.indexOf('firefox') > -1){ ua=1; } // Firefoxの場合のフラグ
+
+    let read_json=localStorage.getItem('Format_Data'); // ローカルストレージ 保存名
+    format_data=JSON.parse(read_json);
+    if(format_data==null){
+        format_data=
+            [['0','FixedFormatPalette'],['1',''],['2',''],['3',''],['4',''],['5',''],['6',''],['7',''],['8',''],['9','']]; }
+    format_data[0][1]='FixedFormatPalette';
+    let write_json=JSON.stringify(format_data);
+    localStorage.setItem('Format_Data', write_json); // ローカルストレージ 保存
+
+
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver(catch_key);
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // iframe がある「通常表示」の場合
+            mode=-1;
+            if(document.querySelector('.ffp_menu')){
+                document.querySelector('.ffp_menu').remove(); }
+
+            iframe_doc=editor_iframe.contentWindow.document;
+            iframe_doc.addEventListener("keyup", check_key);
+
+            function check_key(event){
+                if(event.ctrlKey && event.keyCode==122){ // 「Ctrl + F11」Bankから貼付
+                    event.preventDefault();
+                    mode=0;
+                    setTimeout(()=>{
+                        write_format(); }, 20); }
+
+                if(event.altKey && event.keyCode==122){ // 「Alt + F11」Bank登録
+                    event.preventDefault();
+                    mode=1;
+                    setTimeout(()=>{
+                        record_format(); }, 20); }
+
+                if(event.keyCode==122){ // ページ拡大の誤入力を抑止
+                    event.preventDefault(); }
+
+            } // check_key()
+        } //「通常表示」の場合
+
+        else{ //「HTML表示」の場合
+            mode=-1;
+            if(document.querySelector('.ffp_menu')){
+                document.querySelector('.ffp_menu').remove(); }
+
+            document.addEventListener("keyup", check_key_h);
+
+            function check_key_h(event){
+                if(event.ctrlKey && event.keyCode==122){ // HTML表示で貼付操作をした場合
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    unselect_h();
+                    setTimeout(()=>{
+                        alert(
+                            "　⛔　定型ブロックの記入は通常編集枠で行ってください\n"+
+                            "　　　　　　　　　　　== Fixed Format Palette =="); }, 20); }
+
+
+                if(event.altKey && event.keyCode==122){ //「Alt+F11」Bank登録（HTMLで登録）
+                    if(ua==0){
+                        event.preventDefault();
+                        mode=2; // HTMLでの登録処理
+                        setTimeout(()=>{
+                            record_format_h(); }, 20); }
+
+                    else if(ua==1){ // FirefoxはHTML編集でブロック登録が出来ない
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        unselect_h();
+                        setTimeout(()=>{
+                            alert(
+                                "　⛔　定型ブロックの登録は通常編集枠で行ってください\n"+
+                                "　　　　　　　　　　　== Fixed Format Palette =="); }, 20); }}
+
+                if(event.keyCode==122){ // ページ拡大の誤入力を抑止
+                    event.preventDefault(); }
+
+            } // check_key_h
+        } //「HTML表示」の場合
+    } // catch_key
+
+
+
+    function write_format(){
+        disp_menu();
+
+        document.addEventListener("keydown", menu_key_0);
+        iframe_doc.addEventListener("keydown", menu_key_0);
+        function menu_key_0(event){
+            if(event.keyCode==27 && mode==0){ //「Esc」
+                event.preventDefault();
+                mode=-1;
+                menu_end(); }
+            if(event.keyCode==13 && mode==0){ //「Enter」
+                event.preventDefault();
+                if(format_data[now_bank][1]!=''){ //⏺️
+                    write_in(); } // ペースト処理
+                else{
+                    mode=-1; }
+                setTimeout(()=>{
+                    menu_end(); }, 20); }}
+
+
+        function write_in(){
+            bank=now_bank; //⏺️
+
+            let selection=iframe_doc.getSelection();
+            let range;
+            if(selection && selection.rangeCount>0){
+                range=selection.getRangeAt(0); }
+            let ac_node=selection.anchorNode;
+
+            let insert_node_d=iframe_doc.createElement('div');
+            insert_node_d.setAttribute('id', 'ffp_core');
+
+            if(ac_node && ac_node.parentNode){
+                // insert_node_d 生成の条件　親が div要素か BODYの場合
+                if(ac_node.parentNode.tagName=='DIV' ||
+                   ac_node.parentNode.tagName=='BODY'){
+                    ac_node.parentNode.insertBefore(insert_node_d, ac_node.nextSibling);
+                    d_before_after(); }
+                // insert_node_d 生成の条件　ひとつ外の親が div要素か BODYの場合
+                else if(ac_node.parentNode.parentNode.tagName=='DIV' ||
+                        ac_node.parentNode.parentNode.tagName=='BODY'){
+                    ac_node.parentNode.parentNode.insertBefore(
+                        insert_node_d, ac_node.parentNode.nextSibling);
+                    d_before_after(); }}
+
+            let core=iframe_doc.querySelector('#ffp_core');
+            if(core){
+                core.outerHTML=format_data[bank][1];
+                mode=4; }
+
+            function d_before_after(){
+                range.setEnd(insert_node_d, 0);
+                range.collapse(); // レンジを閉じる
+                caret_back(); }}
+
+    } // write_format()
+
+
+
+    function record_format(){
+        let selection=iframe_doc.getSelection();
+        let range;
+        if(selection && selection.rangeCount>0){
+            range=selection.getRangeAt(0); }
+        select_format=document.createElement('div');
+        select_format.appendChild(range.cloneContents());
+        select_format=select_format.innerHTML;
+
+        disp_menu();
+
+        document.addEventListener("keydown", menu_key_1);
+        iframe_doc.addEventListener("keydown", menu_key_1);
+        function menu_key_1(event){
+
+            bank=now_bank; //⏺️
+
+            if(event.keyCode==27 && mode==1){ //「Esc」
+                event.preventDefault();
+                mode=-1;
+                menu_end(); }
+            else if(event.keyCode==13 && mode==1){ //「Enter」
+                event.preventDefault();
+                format_data[bank][1]=select_format;
+                let write_json=JSON.stringify(format_data);
+                localStorage.setItem('Format_Data', write_json);
+                mode=4;
+                menu_end(); }} // ローカルストレージ 保存
+
+    } // record_format()
+
+
+
+    function record_format_h(){
+        let result=new Promise( function(){
+            document.execCommand("copy"); })
+        navigator.clipboard.readText().then( function(clipText){
+            select_format=clipText; })
+            .then( function(){
+            disp_menu(); })
+            .then( function(){
+            document.querySelector('.CodeMirror textarea').blur(); })
+
+
+        document.addEventListener("keydown", menu_key_2);
+        function menu_key_2(event){
+
+            bank=now_bank; //⏺️
+
+            if(event.keyCode==27 && mode==2){ //「Esc」
+                event.preventDefault();
+                mode=-1;
+                unselect_h();
+                menu_end(); }
+            if(event.keyCode==13 && mode==2){ //「Enter」
+                event.preventDefault();
+                mode=4;
+                format_data[bank][1]=select_format;
+                let write_json=JSON.stringify(format_data);
+                localStorage.setItem('Format_Data', write_json); // ローカルストレージ 保存
+                unselect_h();
+                menu_end(); }}
+
+    } // record_format_h(}
+
+
+
+    function disp_subwin(){
+
+        let css=
+            '.ffp_menu_wrapp { position: fixed; top: 15px; right: 17px; '+
+            'max-height: calc(100% - 30px); overflow: auto; z-index: 20; '+
+            'box-shadow: 20px 20px 60px 0 rgb(0 0 0 / 20%); scrollbar-width: thin; } '+
+            '.ffp_menu { display: flex; justify-content: space-between; width: auto; '+
+            'font-family: Meiryo; font-size: 16px; line-height: 1.6; padding: 8px; '+
+            'border: 1px solid #009688; border-radius: 4px; background: #eee; } '+
+            '.menu_inner { width: 620px; height: fit-content; overflow: hidden; '+
+            'background: #fff; } '+
+            '.menu_inner.renew { margin-right: 8px; } '+
+            '.ffp_menu a { pointer-events: none; } '+
+            '.ffp_menu img { max-width: 99%; height: auto; } '+
+            '.ffp_menu h2, .ffp_menu h3, .ffp_menu h4 { '+
+            'font-weight: normal; line-height: 1.2; } '+
+            '.ffp_menu h2 { font-size: 1.96em; margin: 0.83em 0; } '+
+            '.ffp_menu h3 { font-size: 1.4em; margin: 1em 0; } '+
+            '.ffp_menu h4 { font-size: 1em; margin: 1.33em 0; } '+
+            '.ffp_menu iframe { max-width: 100%; } '+
+            '.ffp_menu .empty { '+
+            'font-size: 32px; color: #ccc; padding: 15px 0 5px; text-align: center; } '+
+            '.ffp_title { padding: 8px 15px 6px; border-bottom: 8px solid #eee; display: flex; '+
+            'color: #fff; font: 16px Meiryo; background: #2196f3; white-space: nowrap; } '+
+            '.ffp_title.file_io { padding: 15px; width: 590px; justify-content: space-around; '+
+            'border: none; } '+
+            '.ffp_title b { font-weight: bold; margin: 0 15px 0 4px; } '+
+            '.ffp_title .wrap { display: inline-block; } '+
+            '.ffp_title .wrap.r { margin: 0 20px 0 auto; } '+
+            '.ffp_sw { display: inline-block; padding: 0 4px; line-height: 24px; height: 22px; '+
+            'border: 1px solid #fff; border-radius: 3px; margin-left: 3px; '+
+            'cursor: pointer; user-select: none; } '+
+            '.ffp_sw.up { padding: 0 3px; } '+
+            '.ffp_sw.down { padding: 0 3px; margin-right: 20px; } '+
+            '.ffp_sw.en { margin-right: 20px; } '+
+            '.ffp_sw:hover { color: #2196f3; background: #fff; } '+
+            '#ffp_help { position: absolute; top: 20px; right: 15px; width: 18px; '+
+            'cursor: pointer; } '+
+            '.ffp_color { height: 26px; width: 22px; margin: -2px 0 0; vertical-align: -3px; '+
+            'border: none; background: none; } '+
+            '.ffp_input { display: none; }';
+
+        if(ua==1){
+            css+='.ffp_color { height: 18px; width: 18px; }'; }
+
+        let menu_style=
+            '<style class="style_ffp_menu">'+ css + '</style>';
+        if(!document.querySelector('.style_ffp_menu')){
+            document.querySelector('.l-body').insertAdjacentHTML('beforeend', menu_style); }
+
+        let style_ffp_menu=document.querySelector('.style_ffp_menu');
+
+
+        if(cke_style()){ // 本文幅の再取得
+            let width_ffp_menu=
+                '<style class="width_ffp_menu">'+ cke_style() +'</style>';
+            if(document.querySelector('.width_ffp_menu')){
+                document.querySelector('.width_ffp_menu').remove(); }
+            style_ffp_menu.insertAdjacentHTML('afterend', width_ffp_menu); }
+
+
+        color_data=localStorage.getItem('Format_Data_color'); // ローカルストレージ 保存名
+        if(color_data==null){
+            color_data='#eeeeee'; }
+
+        let color_ffp_menu=
+            '<style class="color_ffp_menu">'+
+            '.ffp_menu { background: '+ color_data +'; } '+
+            '.ffp_title { border-color: '+color_data +'; }</style>';
+        if(document.querySelector('.color_ffp_menu')){
+            document.querySelector('.color_ffp_menu').remove(); }
+        style_ffp_menu.insertAdjacentHTML('afterend', color_ffp_menu);
+
+
+        let menu_wrapp=
+            '<div class="ffp_menu_wrapp"><div class="ffp_menu"></div></div>';
+        if(document.querySelector('.ffp_menu_wrapp')){
+            document.querySelector('.ffp_menu_wrapp').remove(); }
+        style_ffp_menu.insertAdjacentHTML('beforebegin', menu_wrapp);
+
+    } // disp_subwin()
+
+
+
+    function cke_style(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){
+            iframe_doc=editor_iframe.contentWindow.document;
+            if(iframe_doc){
+                let cke=iframe_doc.querySelector('.cke_editable');
+                if(cke){
+                    let cke_style=getComputedStyle(cke, null);
+                    let width_c=cke_style.getPropertyValue("width").replace(/[^0-9\.]/g, '');
+                    let width_m= Math.round(parseFloat(width_c));
+                    let font_family=cke_style.getPropertyValue("font-family");
+                    let font_size=cke_style.getPropertyValue("font-size");
+
+                    let style=
+                        '.menu_inner { width: '+ (width_m - 16) +'px; '+
+                        'font-family: '+ font_family +'; font-size: '+ font_size +'; }';
+
+                    return style }}}
+
+    } // cke_style()
+
+
+
+    function menu_pos(){
+        let ffp_menu_wrapp=document.querySelector('.ffp_menu_wrapp');
+        let ffp_menu=document.querySelector('.ffp_menu');
+        let right_pos=17;
+        if(ffp_menu_wrapp && ffp_menu){
+            right_pos=17+ ffp_menu.offsetWidth - ffp_menu_wrapp.offsetWidth; }
+
+        let style=
+            '<style class="pos_ffp_menu">'+
+            '.ffp_menu_wrapp { right: '+ right_pos +'px; }</style>';
+
+        if(document.querySelector('.pos_ffp_menu')){
+            document.querySelector('.pos_ffp_menu').remove(); }
+        document.body.insertAdjacentHTML('beforeend', style);
+
+    } // menu_pos()
+
+
+
+    function disp_menu(){
+        disp_subwin();
+
+        setTimeout(()=>{
+            let selection=iframe_doc.getSelection();
+            if(selection){
+                let range=selection.getRangeAt(0);
+                range.collapse(); // 選択範囲がある時は反転を解除
+            }}, 40 ); // 登録の読取りの時間余裕
+
+
+        let out=0;
+        bank=1;
+        menu_change(1); // 初期表示Bank
+        menu_pos();
+
+
+        iframe_doc.addEventListener("keydown", menu_roll);
+        document.addEventListener("keydown", menu_roll);
+        function menu_roll(event){
+            if(event.keyCode==40 && mode>-1 && mode<3){ //「⇩」
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if(bank<9){
+                    bank+=1; }
+                else{
+                    bank=1; }
+                menu_change(bank);
+                menu_pos(); }
+            if(event.keyCode==38 && mode>-1 && mode<3){ //「⇧」
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if(bank>1){
+                    bank-=1; }
+                else{
+                    bank=9; }
+                menu_change(bank);
+                menu_pos(); }}
+
+
+
+        function menu_change(bank){
+            now_bank=bank; //⏺️
+
+            let SVG_h=
+                '<svg id="ffp_help" viewBox="0 0 150 150">'+
+                '<path  fill="#fff" d="M66 13C56 15 47 18 39 24C-12 60 18 146 82 137C92 '+
+                '135 102 131 110 126C162 90 128 4 66 13M68 25C131 17 145 117 81 '+
+                '125C16 133 3 34 68 25M69 40C61 41 39 58 58 61C66 63 73 47 82 57C84 '+
+                '60 83 62 81 65C77 70 52 90 76 89C82 89 82 84 86 81C92 76 98 74 100 66'+
+                'C105 48 84 37 69 40M70 94C58 99 66 118 78 112C90 107 82 89 70 94z">'+
+                '</path></svg>';
+
+            let menu=document.querySelector('.ffp_menu');
+            let menu_str;
+            if(mode==0){ // Bankから貼付
+                menu_str=
+                    '<div class="menu_inner">'+
+                    '<div class="ffp_title">'+
+                    'Bank<b>'+ bank +'</b>'+
+                    '<span class="wrap">'+
+                    '<span class="ffp_sw up">⇧</span><span class="ffp_sw down">⇩</span>'+
+                    '貼付<span class="ffp_sw en">Enter</span>'+
+                    '中止<span class="ffp_sw es">Esc</span></span>'+
+                    '<span class="wrap r">'+
+                    '<span class="ffp_sw bk">File</span></span>'+ SVG_h +'</div>';
+                if(format_data[bank][1]==''){
+                    menu_str+='<div class="empty">未登録</div></div>'; }
+                else{
+                    menu_str+=format_data[bank][1] +'</div>'; }}
+
+            if(mode==1 || mode==2){ // 通常表示でBank登録・HTML表示でBank登録
+                menu_str='<div id="check">'+ select_format + '</div>'; // テスト
+                menu.innerHTML=menu_str;
+                let check=document.querySelector('#check');
+                if(check){
+                    if(getComputedStyle(check, null).getPropertyValue("height")=='0px'){
+                        select_format=''; // 非表示要素は無入力に変換する:登録の削除
+                        menu_str=
+                            '<div class="menu_inner">'+
+                            '<div class="ffp_title" style="background: #000;">'+
+                            'Bank<b>'+ bank +'</b>'+
+                            '<span class="wrap">'+
+                            '<span class="ffp_sw up">⇧</span><span class="ffp_sw down">⇩</span>'+
+                            '登録削除<span class="ffp_sw en">Enter</span>'+
+                            '中止<span class="ffp_sw es">Esc</span></span></div>';
+
+                        if(format_data[bank][1]==''){
+                            menu_str+='<div class="empty">未登録</div></div>'; }
+                        else{
+                            menu_str+=format_data[bank][1] +'</div>'; }}
+
+                    else { // 登録データを更新する場合
+                        menu_str=
+                            '<div class="menu_inner renew">'+
+                            '<div class="ffp_title">'+
+                            'Bank<b>'+ bank +'</b>'+
+                            '<span class="wrap">'+
+                            '登録<span class="ffp_sw en">Enter</span>'+
+                            '中止<span class="ffp_sw es">Esc</span></span>'+
+                            '<span class="wrap r">'+
+                            '<span class="ffp_sw bk">File</span></span>'+ SVG_h +'</div>'+
+                            select_format +
+                            '</div>'+
+                            '<div class="menu_inner">'+
+                            '<div class="ffp_title btm" style="background: #000;">'+
+                            'Bank<b>'+ bank +'</b>'+
+                            '<span class="ffp_sw up">⇧</span><span class="ffp_sw down">⇩</span>'+
+                            '以下の登録内容は削除されます</div>';
+
+                        if(format_data[bank][1]==''){
+                            menu_str+='<div class="empty">未登録</div></div>'; }
+                        else{
+                            menu_str+=format_data[bank][1] +'</div>'; }}}}
+
+            menu.innerHTML=menu_str;
+
+
+
+            let ffp_swdown=document.querySelector('.ffp_sw.down');
+            if(ffp_swdown){
+                ffp_swdown.onclick=function(event){
+                    if(mode>-1 && mode<3){ //「⇩」
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        if(bank<9){
+                            bank+=1; }
+                        else{
+                            bank=1; }
+                        menu_change(bank);
+                        menu_pos(); }}}
+
+
+            let ffp_swup=document.querySelector('.ffp_sw.up');
+            if(ffp_swup){
+                ffp_swup.onclick=function(event){
+                    if(mode>-1 && mode<3){ //「⇧」
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        if(bank>1){
+                            bank-=1; }
+                        else{
+                            bank=9; }
+                        menu_change(bank);
+                        menu_pos(); }}}
+
+
+            let ffp_swbk=document.querySelector('.ffp_sw.bk');
+            if(ffp_swbk){
+                ffp_swbk.onclick=function(event){
+                    event.stopImmediatePropagation();
+                    mode=3;
+                    caret_back();
+                    unselect_h();
+                    ffp_backup(); }}
+
+
+            let ffp_title=document.querySelector('.ffp_title');
+            if(ffp_title){
+                ffp_title.onclick=function(event){
+                    event.stopImmediatePropagation();
+                    caret_back(); }}
+
+
+            let ffp_swen=document.querySelector('.ffp_sw.en');
+            if(ffp_swen){
+                ffp_swen.onclick=function(event){
+                    unselect_h();
+                    caret_back();
+                    key_in(13);
+                    function key_in(key_Code){
+                        let keyEvent=new KeyboardEvent('keydown', {keyCode: key_Code});
+                        iframe_doc.dispatchEvent(keyEvent);
+                        document.dispatchEvent(keyEvent); }}}
+
+
+            let ffp_swes=document.querySelector('.ffp_sw.es');
+            if(ffp_swes){
+                ffp_swes.onclick=function(event){
+                    event.stopImmediatePropagation();
+                    caret_back();
+                    mode=-1;
+                    unselect_h();
+                    menu.remove(); }}
+
+
+            let ffp_help=document.querySelector('#ffp_help');
+            if(ffp_help){
+                ffp_help.onclick=function(event){
+                    event.stopImmediatePropagation();
+                    window.open('https://ameblo.jp/personwritep/entry-12783760034.html#manual',
+                                null, 'width=820,height=800'); }}
+
+        } // menu_change()
+    } // disp_menu();
+
+
+
+    function menu_end(){
+        if(document.querySelector('.ffp_menu')){
+            document.querySelector('.ffp_menu').remove(); }}
+
+
+
+    function caret_back(){
+        let iframe_body=iframe_doc.querySelector('.cke_editable');
+        if(iframe_body){
+            iframe_body.focus(); }}
+
+
+
+    function unselect_h(){ //「Home」の入力で選択解除しコピー元の削除を防ぐ
+        let CodeMirror=document.querySelector('.CodeMirror');
+        if(CodeMirror){
+            key_in(36);
+            function key_in(key_Code){
+                let keyEvent=new KeyboardEvent('keydown', {keyCode: key_Code});
+                document.querySelector('.CodeMirror textarea').dispatchEvent(keyEvent); }}}
+
+
+
+    function ffp_backup(){
+        let ffp_menu_wrapp=document.querySelector('.ffp_menu_wrapp');
+        let menu_wrapp=
+            '<div class="ffp_menu_wrapp">'+
+            '<div class="ffp_menu">'+
+            '<div class="ffp_title file_io">'+
+            '<span class="ffp_button1 ffp_sw">Bankをファイルに保存</span>'+
+            '<span class="ffp_button2 ffp_sw">Bankのファイルを読込む</span>'+
+            '<span class="ffp_sw">枠線色：<input class="ffp_color" type="color"></span>'+
+            '<span class="ffp_button3 ffp_sw">✖</span>'+
+            '<input class="ffp_input" type="file"></div></div></div>';
+
+        ffp_menu_wrapp.outerHTML=menu_wrapp;
+
+
+        let button1=document.querySelector('.ffp_button1');
+        let button2=document.querySelector('.ffp_button2');
+        let ffp_color=document.querySelector('.ffp_color');
+        let button3=document.querySelector('.ffp_button3');
+        let ffp_input=document.querySelector('.ffp_input');
+
+
+        button1.onclick=function(){
+            let write_json=JSON.stringify(format_data); // 記録用配列 format_data を書出す
+            let blob=new Blob([write_json], {type: 'application/json'});
+
+            let a_elem=document.createElement('a');
+            a_elem.href=URL.createObjectURL(blob);
+            a_elem.download='FFP.json'; // 保存ファイル名
+            a_elem.click();
+            URL.revokeObjectURL(a_elem.href); }
+
+
+        button2.onclick=function(){
+            alert(
+                " 🔴  Bankデータを読込む前に、これまでのBankの保存を勧めます。\n\n"+
+                " 🔴 「FFP(n).json」のファイルを読込んでください\n"+
+                "　　(n)は同名のファイルがある場合の連番です");
+            ffp_input.click(); }
+
+        ffp_input.addEventListener("change", function(){
+            if(!(ffp_input.value)) return; // ファイルが選択されない場合
+            let file_list=ffp_input.files;
+            if(!file_list) return; // ファイルリストが選択されない場合
+            let file=file_list[0];
+            if(!file) return; // ファイルが無い場合
+
+            let file_reader=new FileReader();
+            file_reader.readAsText(file);
+            file_reader.onload=function(){
+                if(file_reader.result.slice(0, 15)=='[["0","FixedFor'){ // FFP.jsonの確認
+                    let data_in=JSON.parse(file_reader.result);
+                    format_data=data_in; // 記録用配列  format_data を上書き
+                    let write_json=JSON.stringify(format_data);
+                    localStorage.setItem('Format_Data', write_json); // ローカルストレージに保存
+                }};
+
+            mode=-1;
+            menu_end(); });
+
+
+        ffp_color.value=color_data;
+        ffp_color.onchange=function(){
+            let ffp_menu=document.querySelector('.ffp_menu');
+            if(ffp_menu){
+                ffp_menu.style.background=ffp_color.value;
+                localStorage.setItem('Format_Data_color', ffp_color.value); }} // ストレージ 保存
+
+
+        button3.onclick=function(){
+            mode=-1;
+            menu_end();
+            caret_back();
+            unselect_h(); }
+
+    } // ffp_backup()
+
+} // main()
