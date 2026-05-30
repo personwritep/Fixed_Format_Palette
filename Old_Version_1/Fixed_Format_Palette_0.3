@@ -1,0 +1,211 @@
+// ==UserScript==
+// @name          Fixed Format Palette
+// @namespace  http://tampermonkey.net/
+// @version      0.3
+// @description  編集枠に定型表示を自動記入するツール
+// @author       Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @grant         none
+// ==/UserScript==
+
+
+window.addEventListener('load', function(){
+    let format_data;
+
+    let read_json=localStorage.getItem('Format_Data'); // ローカルストレージ 保存名
+    format_data=JSON.parse(read_json);
+    if(format_data==null){
+        format_data=[['0', 'temp'],['1',''],['2',''],['3',''],['4',''],['5',''],['6',''],['7',''],['8',''],['9','']]; }
+    let write_json=JSON.stringify(format_data);
+    localStorage.setItem('Format_Data', write_json); // ローカルストレージ 保存
+
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver(catch_key);
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        let editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // iframe がある「通常表示」の場合
+            let iframe_doc=editor_iframe.contentWindow.document;
+
+            iframe_doc.addEventListener("keydown", check_key1);
+            let gate;
+            function check_key1(event){
+                let send=-1;
+
+                if(event.altKey && event.keyCode==81){ // 通常表示で登録操作をした場合
+                    event.stopImmediatePropagation();
+                    let selection=iframe_doc.getSelection();
+                    let range=selection.getRangeAt(0);
+                    selection.removeRange(range);
+                    alert("　⛔　登録はHTML編集枠で行ってください"); }
+
+                if(event.ctrlKey && event.keyCode==81){ // 「Ctrl + Q」
+                    event.preventDefault(); gate=1; }
+
+                if(event.keyCode==49){
+                    if(gate==1){ event.preventDefault(); send=49; }} // 1
+                if(event.keyCode==50){
+                    if(gate==1){ event.preventDefault(); send=50; }} // 2
+                if(event.keyCode==51){
+                    if(gate==1){ event.preventDefault(); send=51; }} // 3
+                if(event.keyCode==52){
+                    if(gate==1){ event.preventDefault(); send=52; }} // 4
+                if(event.keyCode==53){
+                    if(gate==1){ event.preventDefault(); send=53; }} // 5
+                if(event.keyCode==54){
+                    if(gate==1){ event.preventDefault(); send=54; }} // 6
+                if(event.keyCode==55){
+                    if(gate==1){ event.preventDefault(); send=55; }} // 7
+                if(event.keyCode==56){
+                    if(gate==1){ event.preventDefault(); send=56; }} // 8
+                if(event.keyCode==57){
+                    if(gate==1){ event.preventDefault(); send=57; }} // 9
+
+                if(event.keyCode==229){ // 漢字変換がONで書き込み操作をした場合
+                    if(gate==1){
+                        event.stopImmediatePropagation();
+                        alert("　⛔　漢字変換をOFFにして操作をしてください");
+                        gate=-1; }}
+
+                if(!(event.ctrlKey && event.keyCode==81)){ // 次の入力でgateをリセット
+                    gate=-1; }
+
+                if(send !=-1){
+                    gate=-1;
+                    event.stopImmediatePropagation();
+                    set_format(send); }
+            }} // check_key1　「通常表示」の場合
+
+        else{ //「HTML表示」の場合
+            target.addEventListener("keydown", check_key2);
+            let gate;
+            function check_key2(event){
+                let send=-1;
+
+                if(event.ctrlKey && event.keyCode==81){ // HTML表示で書込み操作をした場合
+                    event.stopImmediatePropagation();
+                    alert("　⛔　定型書込みは通常編集枠で行ってください"); }
+
+                if(event.altKey && event.keyCode==81){ // 「Alt + Q」
+                    event.preventDefault(); gate=1; }
+
+                if(event.keyCode==49){
+                    if(gate==1){ event.preventDefault(); send=49; }} // 1
+                if(event.keyCode==50){
+                    if(gate==1){ event.preventDefault(); send=50; }} // 2
+                if(event.keyCode==51){
+                    if(gate==1){ event.preventDefault(); send=51; }} // 3
+                if(event.keyCode==52){
+                    if(gate==1){ event.preventDefault(); send=52; }} // 4
+                if(event.keyCode==53){
+                    if(gate==1){ event.preventDefault(); send=53; }} // 5
+                if(event.keyCode==54){
+                    if(gate==1){ event.preventDefault(); send=54; }} // 6
+                if(event.keyCode==55){
+                    if(gate==1){ event.preventDefault(); send=55; }} // 7
+                if(event.keyCode==56){
+                    if(gate==1){ event.preventDefault(); send=56; }} // 8
+                if(event.keyCode==57){
+                    if(gate==1){ event.preventDefault(); send=57; }} // 9
+
+                if(event.keyCode==229){ // 漢字変換がONで登録操作をした場合
+                    if(gate==1){
+                        gate=-1;
+                        event.stopImmediatePropagation();
+                        alert("　⛔　漢字変換をOFFにして登録操作をしてください");
+                        let selection=document.getSelection();
+                        let range=selection.getRangeAt(0);
+                        selection.removeRange(range); }}
+
+                if(!(event.altKey && event.keyCode==81)){ // 次の入力でgateをリセット
+                    gate=-1; }
+
+                if(send !=-1){
+                    gate=-1;
+                    event.stopImmediatePropagation();
+                    memo_format(send); }
+            }} // check_key2 「HTML表示」の場合
+    } // catch_key
+
+
+    function set_format(sender){
+        let editor_iframe;
+        let iframe_doc;
+        let iframe_html;
+        let selection;
+        let range;
+        let ac_node;
+        let insert_node_d;
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        iframe_doc=editor_iframe.contentWindow.document;
+        iframe_html=iframe_doc.querySelector('html');
+        selection=iframe_doc.getSelection();
+        range=selection.getRangeAt(0);
+        ac_node=selection.anchorNode;
+
+        for(let k=1; k<10;k++){
+            if(sender==k+48){
+                set(k); }}
+
+        function set(k){
+            insert_node_d=iframe_doc.createElement('div');
+            insert_node_d.innerHTML=format_data[k][1];
+
+            if(ac_node.nodeType==3 &&
+               ac_node.parentNode.tagName=='P' && ac_node.parentNode.parentNode.tagName=='BODY'){
+                ac_node.parentNode.parentNode.insertBefore(insert_node_d, ac_node.parentNode.nextSibling);
+                d_before_after();
+                when_end(); } // d要素生成の条件 通常のP要素のテキストノードから作成
+
+            if(ac_node.tagName=='P' &&
+               ac_node.firstChild.tagName=='BR' && ac_node.parentNode.tagName=='BODY'){
+                ac_node.parentNode.insertBefore(insert_node_d, ac_node);
+                d_before_after();
+                when_end(); } // div要素生成の条件 空白行から作成
+
+            function d_before_after(){
+                if(insert_node_d==insert_node_d.parentNode.firstChild ||
+                   insert_node_d.previousElementSibling.firstChild.tagName !='BR'){
+                    insert_node_d.insertAdjacentHTML('beforebegin', '<p>\u00A0</p>');}
+                if(insert_node_d.nextElementSibling==null ||
+                   insert_node_d.nextElementSibling.firstChild.tagName !='BR'){
+                    insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');}
+                range.setEnd(insert_node_d, 0);
+                range.collapse();} // 生成したdiv要素の前後の空白行処理
+
+            function when_end(){
+                if(insert_node_d.nextElementSibling==insert_node_d.parentNode.lastChild){
+                    insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');
+                    iframe_html.scrollTop=iframe_html.scrollHeight;}}} // 文末処理
+    } // set_format()
+
+
+    function memo_format(sender){
+        for(let k=1; k<10; k++){
+            if(sender==k+48){
+                memo(k); }}
+
+        function memo(k){
+            let select_fomat=document.getSelection().toString().replace(/\r?\n/g, '');
+            let conf_str=
+                '🔴　選択した範囲を定型記入データ 「No '+k+' 」 に上書き登録します\n'+
+                ' 　　登録したデータはショートカット 「Ctrl+Q+'+k+'」 で書き込めます\n\n'+
+                '🔴　これまでの以下の登録内容は削除されます\n'+
+                format_data[k][1];
+
+            let ok=confirm(conf_str);
+            if(ok){
+                format_data[k][1]=select_fomat;
+                let write_json=JSON.stringify(format_data);
+                localStorage.setItem('Format_Data', write_json); } // ローカルストレージ 保存
+
+            let keyEvent=new KeyboardEvent('keydown', {keyCode: 37});
+            document.querySelector('.CodeMirror textarea').dispatchEvent(keyEvent); } //選択解除
+    } // memo_format()
+
+})
