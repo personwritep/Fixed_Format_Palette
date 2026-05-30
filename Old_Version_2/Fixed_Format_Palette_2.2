@@ -1,0 +1,333 @@
+// ==UserScript==
+// @name          Fixed Format Palette
+// @namespace  http://tampermonkey.net/
+// @version      2.2
+// @description  編集枠に定型表示を自動記入するツール
+// @author       Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @grant         none
+// ==/UserScript==
+
+
+window.addEventListener('load', function(){
+    let editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+    let iframe_doc=editor_iframe.contentWindow.document;
+    let iframe_html=iframe_doc.querySelector('html');
+    let format_data;
+    let bank;
+    let select_format;
+
+    let ua=0; // Chromeの場合のフラグ
+    let agent=window.navigator.userAgent.toLowerCase();
+    if(agent.indexOf('firefox') > -1){ ua=1; } // Firefoxの場合のフラグ
+
+    let read_json=localStorage.getItem('Format_Data'); // ローカルストレージ 保存名
+    format_data=JSON.parse(read_json);
+    if(format_data==null){
+        format_data=[['0','FixedFormatPalette'],['1',''],['2',''],['3',''],['4',''],['5',''],['6',''],['7',''],['8',''],['9','']]; }
+    format_data[0][1]='FixedFormatPalette';
+    let write_json=JSON.stringify(format_data);
+    localStorage.setItem('Format_Data', write_json); // ローカルストレージ 保存
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver(catch_key);
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // iframe がある「通常表示」の場合
+            iframe_doc=editor_iframe.contentWindow.document;
+            iframe_doc.addEventListener("keydown", check_key1);
+            let gate;
+            let send;
+
+            function check_key1(event){
+                send=-1;
+
+                if(event.ctrlKey && event.keyCode==122){ // 「Ctrl + F11」Bankから書出し
+                    event.preventDefault(); gate=1; }
+                if(gate==1){
+                    get_bank(event); }
+                if(event.altKey && event.keyCode==122){ // 「Alt + F11」Bank登録
+                    event.preventDefault(); gate=2; }
+                if(gate==2){
+                    get_bank(event); }
+
+                if(send>0){
+                    event.stopImmediatePropagation(); // 二重ペーストを防ぐのに必要
+                    if(gate==1){
+                        gate=-1;
+                        bank=send;
+                        write_format(); }
+                    if(gate==2){
+                        gate=-1;
+                        bank=send;
+                        sign(0);
+                        setTimeout(()=>{
+                            memo_format(); }, 20); }}
+                if(send==0){
+                    gate=-1;
+                    sign(1);
+                    backup(); }}
+
+            function get_bank(event){
+                if(event.keyCode==48 || event.keyCode==96){
+                    event.preventDefault(); send=0; } // ファイルの読込・書出し
+                if(event.keyCode==49 || event.keyCode==97){
+                    event.preventDefault(); send=1; } // Bank1
+                if(event.keyCode==50 || event.keyCode==98){
+                    event.preventDefault(); send=2; } // Bank2
+                if(event.keyCode==51 || event.keyCode==99){
+                    event.preventDefault(); send=3; } // Bank3
+                if(event.keyCode==52 || event.keyCode==100){
+                    event.preventDefault(); send=4; } // Bank4
+                if(event.keyCode==53 || event.keyCode==101){
+                    event.preventDefault(); send=5; } // Bank5
+                if(event.keyCode==54 || event.keyCode==102){
+                    event.preventDefault(); send=6; } // Bank6
+                if(event.keyCode==55 || event.keyCode==103){
+                    event.preventDefault(); send=7; } // Bank7
+                if(event.keyCode==56 || event.keyCode==104){
+                    event.preventDefault(); send=8; } // Bank8
+                if(event.keyCode==57 || event.keyCode==105){
+                    event.preventDefault(); send=9; } // Bank9
+                if(event.keyCode<48 || (event.keyCode>57 && event.keyCode<96) ||
+                   event.keyCode>105){ // 3個目が数字外の場合（削除防止）
+                    if(event.keyCode==122){ ; }
+                    else if(event.keyCode==229){ // 漢字変換がONで書き込み操作をした場合（削除防止）
+                        event.stopImmediatePropagation();
+                        alert(
+                            "　⛔　編集枠内にカーソルを入れて 漢字変換をOFFにしてください\n"+
+                            "　　　　　　　== Fixed Format Palette ==");
+                        editor_iframe.blur();
+                        gate=-1; }
+                    else{
+                        event.preventDefault();
+                        iframe_doc.getSelection().removeAllRanges(); // 選択範囲を解除（削除防止）
+                        gate=-1; }}
+
+                setTimeout(()=>{
+                    iframe_doc.getSelection().removeAllRanges(); // 選択範囲を解除（削除防止）
+                    gate=-1; }, 2000); // 2sec以内にBankを押さないと gateをリセット
+            }} // check_key1　「通常表示」の場合
+
+        else{ //「HTML表示」の場合
+            target.addEventListener("keydown", check_key2);
+            let gate;
+            function check_key2(event){
+                if(event.ctrlKey && event.keyCode==122){ // HTML表示で書込み操作をした場合
+                    event.stopImmediatePropagation();
+                    alert(
+                        "　⛔　定型ブロックの記入は通常編集枠で行ってください\n"+
+                        "　　　　　　　　　　　== Fixed Format Palette ==");
+                    document.querySelector('.CodeMirror textarea').blur(); }
+                if(event.altKey && event.keyCode==122){ // HTML表示で読込み操作をした場合
+                    event.stopImmediatePropagation();
+                    alert(
+                        "　⛔　定型ブロックの登録は通常編集枠で行ってください\n"+
+                        "　　　　　　　　　　　== Fixed Format Palette ==");
+                    document.querySelector('.CodeMirror textarea').blur(); }}} // check_key2
+    } // catch_key
+
+
+    function write_format(){
+        let selection=iframe_doc.getSelection();
+        let range;
+        if(selection && selection.rangeCount>0){
+            range=selection.getRangeAt(0); }
+        let ac_node=selection.anchorNode;
+        let insert_node_d;
+
+        read_json=localStorage.getItem('Format_Data'); // ローカルストレージ 保存名
+        format_data=JSON.parse(read_json); // ストレージの読出し
+
+        insert_node_d=iframe_doc.createElement('div');
+        insert_node_d.innerHTML=format_data[bank][1];
+
+        if(ac_node.parentNode.tagName=='DIV'){
+            ac_node.parentNode.insertBefore(insert_node_d, ac_node.nextSibling);
+            d_before_after(); } // d要素生成の条件 親が div要素の中から作成
+
+        else if(ac_node.parentNode.tagName=='P'){
+            if(ac_node.nodeType==3 && ac_node.parentNode.parentNode.tagName=='BODY'){
+                ac_node.parentNode.parentNode.insertBefore(insert_node_d, ac_node.parentNode.nextSibling);
+                d_before_after();
+                when_end(); }} // d要素生成の条件 通常のP要素のテキストノードから作成
+
+        else if(ac_node.parentNode.tagName=='BODY'){
+            if((ac_node.tagName=='P' || ac_node.tagName=='DIV') && ac_node.firstChild.tagName=='BR'){
+                ac_node.parentNode.insertBefore(insert_node_d, ac_node);
+                d_before_after();
+                when_end(); }} // div要素生成の条件 空白行から作成
+
+        function d_before_after(){
+            if(insert_node_d==insert_node_d.parentNode.firstChild ||
+               insert_node_d.previousElementSibling.firstChild.tagName !='BR'){
+                insert_node_d.insertAdjacentHTML('beforebegin', '<p>\u00A0</p>');}
+            if(insert_node_d.nextElementSibling==null ||
+               insert_node_d.nextElementSibling.firstChild.tagName !='BR'){
+                insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');}
+            range.setEnd(insert_node_d, 0);
+            range.collapse();} // 生成したdiv要素の前後の空白行処理
+
+        function when_end(){
+            if(insert_node_d.nextElementSibling==insert_node_d.parentNode.lastChild){
+                insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');
+                iframe_html.scrollTop=iframe_html.scrollHeight;}} // 文末処理
+    } // write_format()
+
+
+
+    function memo_format(){
+        let css=
+            '.ffp_menu { position: absolute; top: 10px; left: calc(50% - 80px); z-index: 15; '+
+            'border: 1px solid #009688; border-radius: 4px; background: #fff; padding: 1em; '+
+            'box-shadow: 20px 20px 60px 0 rgba(0, 0, 0, .2); font-size: 14px; width: 543px } '+
+            '.ffp_title { padding: 4px 15px 3px; margin: 0 0 10px; background: #2196f3; color: #fff }';
+
+        let menu=document.createElement('div');
+        menu.setAttribute('class', "ffp_menu");
+        document.querySelector('.l-body').appendChild(menu);
+
+        let selection=iframe_doc.getSelection();
+        let range;
+        if(selection && selection.rangeCount>0){
+            range=selection.getRangeAt(0); }
+        select_format=document.createElement('div');
+        select_format.appendChild(range.cloneContents());
+        select_format=select_format.innerHTML;
+
+        let menu_str=
+            '<style>'+css+'</style>'+
+            '<div class="ffp_title">選択範囲の以下の内容を Bank ◁ '+bank+' ▷ に上書き登録します</div>'+
+            select_format+'<br><br>'+
+            '<div class="ffp_title">これまでの以下の登録内容は削除されます</div>'+
+            format_data[bank][1]+'<br>';
+
+        menu.innerHTML=menu_str;
+        iframe_doc.addEventListener("keydown", menu_key);
+        function menu_key(event){
+            if(event.keyCode==27 && target.querySelector('.disp_line_ffp')){ //「Esc」
+                event.preventDefault();
+                menu_end(); }
+            if(event.keyCode==13 && target.querySelector('.disp_line_ffp')){ //「Enter」
+                event.preventDefault();
+                format_data[bank][1]=select_format;
+                let write_json=JSON.stringify(format_data);
+                localStorage.setItem('Format_Data', write_json);
+                menu_end(); }} // ローカルストレージ 保存
+
+        function menu_end(){
+            selection.removeAllRanges(); // 反転を解除
+            editor_iframe.blur(); // 編集枠からカーソルを外し誤記入を防ぐ
+            sign_clear();
+            document.querySelector('.ffp_menu').remove(); }
+    } // memo_format()
+
+
+    function sign(type){
+        let css=
+            '.disp_line_ffp { display: inline-block; margin: 0 0 4px; padding: 4px 15px 1px;'+
+            'font-size: 16px; color: #fff; background: #2196f3; }'+
+            '.disp_line_ffpb { font-weight: bold; padding: 0.2em; }'+
+            '.disp_line_ffp input{ font-size: 14px; }';
+        let disp_line=document.createElement('span');
+        disp_line.setAttribute('class', 'disp_line_ffp');
+
+        if(type==0){ // 定型の登録メニュー表示
+            disp_line.appendChild(document.createTextNode('　Bank ◁'));
+            let bank_span=document.createElement("span");
+            bank_span.setAttribute('class', 'disp_line_ffpb');
+            bank_span.appendChild(document.createTextNode(bank));
+            disp_line.appendChild(bank_span);
+            disp_line.appendChild(document.createTextNode('▷　　Enter： write　　Esc：end　')); }
+
+        if(type==1){ // ファイル保存・読込みメニュー表示
+
+            let button1=document.createElement('input');
+            button1.setAttribute('type', 'submit');
+            button1.setAttribute('class', 'ffp_button1');
+            button1.setAttribute('value', '定型登録データを保存する');
+            button1.setAttribute('style', 'padding: 1px 8px 0; margin: 0 15px; color: #000');
+            if(ua==1){
+                button1.setAttribute('style', 'padding: 0 8px; margin: 0 15px;  color: #000'); }
+            disp_line.appendChild(button1);
+
+            let button2=document.createElement('input');
+            button2.setAttribute('class', 'ffp_button2');
+            button2.setAttribute('type', 'file');
+            button2.setAttribute('style', 'margin: 0 0 5px 10px; height: 23px; width: 300px');
+            if(ua==1){
+                button2.setAttribute('style', 'margin: 0 0 4px 10px; height: 25px; width: 300px'); }
+            disp_line.appendChild(button2);
+
+            let button3=document.createElement('input');
+            button3.setAttribute('class', 'ffp_button3');
+            button3.setAttribute('type', 'submit');
+            button3.setAttribute('value', '✖ 閉じる');
+            button3.setAttribute('style', 'padding: 1px 6px 0; margin: 0 15px; color: #000');
+            if(ua==1){
+                button3.setAttribute('style', 'padding: 0 6px; margin: 0 15px; color: #000'); }
+            disp_line.appendChild(button3); }
+
+        monitor.disconnect(); // MutationObserverを 起動表示に反応させない
+
+        let style_ext=document.createElement('style'); // disp_line のデザインを指定
+        style_ext.setAttribute('id', 'style_extffp');
+        style_ext.insertAdjacentHTML('afterbegin', css);
+        if(!target.querySelector('#style_extffp')){
+            target.appendChild(style_ext); }
+        if(!target.querySelector('.disp_line_ffp')){
+            target.insertBefore(disp_line, editor_iframe); }
+
+        monitor.observe(target, {childList: true}); } // Fixed Format Palette 登録部の起動表示
+
+
+    function sign_clear(){
+        if(target.querySelector('.disp_line_ffp')){
+            target.querySelector('.disp_line_ffp').remove(); }} // Fixed Format Palette 登録部の起動表示を削除
+
+
+    function backup(){
+        let button1=document.querySelector('.ffp_button1');
+        let button2=document.querySelector('.ffp_button2');
+        let button3=document.querySelector('.ffp_button3');
+
+        button1.onclick=function(){
+            let write_json=JSON.stringify(format_data); // Memo用配列 format_data を書出す
+            let blob=new Blob([write_json], {type: 'application/json'});
+
+            let a_elem=document.createElement('a');
+            a_elem.href=URL.createObjectURL(blob);
+            a_elem.download='FFP.json'; // 保存ファイル名
+            if(ua==1){
+                a_elem.target='_blank';
+                document.body.appendChild(a_elem); }
+            a_elem.click();
+            if(ua==1){
+                document.body.removeChild(a_elem); }
+            URL.revokeObjectURL(a_elem.href); }
+
+        button2.addEventListener("change", function(){
+            if(!(button2.value)) return; // ファイルが選択されない場合
+            let file_list=button2.files;
+            if(!file_list) return; // ファイルリストが選択されない場合
+            let file=file_list[0];
+            if(!file) return; // ファイルが無い場合
+
+            let file_reader=new FileReader();
+            file_reader.readAsText(file);
+            file_reader.onload=function(){
+                if(file_reader.result.slice(0, 15)=='[["0","FixedFor'){ // FFP.jsonの確認
+                    let data_in=JSON.parse(file_reader.result);
+                    format_data=data_in; // Memo用配列  format_data を上書き
+                    let write_json=JSON.stringify(format_data);
+                    localStorage.setItem('Format_Data', write_json); // ローカルストレージに保存
+                }};});
+
+        button3.onclick=function(){
+            sign_clear(); }} // backup()
+
+})
