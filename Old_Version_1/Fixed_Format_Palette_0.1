@@ -1,0 +1,148 @@
+// ==UserScript==
+// @name          Fixed Format Palette
+// @namespace  http://tampermonkey.net/
+// @version      0.1
+// @description  編集枠に定型表示を自動記入するツール
+// @author       Ameba Blog User
+// @match        https://blog.ameba.jp/ucs/entry/srventry*
+// @grant         none
+// ==/UserScript==
+
+
+window.addEventListener('load', function(){
+
+    let target=document.getElementById('cke_1_contents'); // 監視 target
+    let monitor=new MutationObserver(catch_key);
+    monitor.observe(target, {childList: true}); // ショートカット待受け開始
+
+    catch_key();
+
+    function catch_key(){
+        let editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        if(editor_iframe){ // iframe読込みが実行条件
+            let iframe_doc=editor_iframe.contentWindow.document;
+
+            iframe_doc.addEventListener("keydown", check_key);
+            let gate;
+            function check_key(event){
+                let send=-1;
+
+                if(event.ctrlKey && event.keyCode==81){ // 「Ctrl + Q」
+                    event.preventDefault(); gate=1; }
+
+                if(event.keyCode==49){
+                    if(gate==1){ event.preventDefault(); send=49; }} // 1
+                if(event.keyCode==50){
+                    if(gate==1){ event.preventDefault(); send=50; }} // 2
+                if(event.keyCode==51){
+                    if(gate==1){ event.preventDefault(); send=51; }} // 3
+                if(event.keyCode==52){
+                    if(gate==1){ event.preventDefault(); send=52; }} // 4
+                if(event.keyCode==53){
+                    if(gate==1){ event.preventDefault(); send=53; }} // 5
+                if(event.keyCode==54){
+                    if(gate==1){ event.preventDefault(); send=54; }} // 6
+                if(event.keyCode==55){
+                    if(gate==1){ event.preventDefault(); send=55; }} // 7
+                if(event.keyCode==56){
+                    if(gate==1){ event.preventDefault(); send=56; }} // 8
+                if(event.keyCode==57){
+                    if(gate==1){ event.preventDefault(); send=57; }} // 9
+
+                if(!event.ctrlKey || event.keyCode!=81){ gate=-1; }
+                if(send !=-1){
+                    event.stopImmediatePropagation();
+                    set_mark(send); }
+            } // check_key
+        }} // catch_key
+
+
+    function set_mark(sender){
+        let editor_iframe;
+        let iframe_doc;
+        let iframe_html;
+        let iframe_body;
+        let selection;
+        let range;
+        let ac_node;
+        let insert_node;
+
+        editor_iframe=document.querySelector('.cke_wysiwyg_frame');
+        iframe_doc=editor_iframe.contentWindow.document;
+        iframe_html=iframe_doc.querySelector('html');
+        iframe_body=iframe_doc.querySelector('body.cke_editable');
+        selection=iframe_doc.getSelection();
+        range=selection.getRangeAt(0);
+        ac_node=selection.anchorNode;
+
+        if(sender==49){ //「Q1」
+            let fomat_data='<p>&nbsp;</p>'+
+                '<div style="border: 1px solid #aaa; padding: .62em 1em .5em; max-width: 660px;">'+
+                'アキバに行くならヨドバシカメラ<div style="width:400px;margin-top: 0.4em;display: inline-block;">'+
+                '<iframe allowfullscreen="" frameborder="0" height="300" '+
+                'src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d482.50506249097987!2d139.'+
+                '7745675947195!3d35.69887933546075!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sja!2'+
+                'sjp!4v1572223913020!5m2!1sja!2sjp" style="border:0;" width="400"></iframe></div>'+
+                '<div style="width: 160px;font-size: 18px;margin-left: 1em;display: inline-block;"><br>'+
+                'If youre going to San Francisco<br>Be sure to wear some flowers in your hair'+
+                ' <img alt="チューリップオレンジ" draggable="false" height="16" src="https://stat100.'+
+                'ameba.jp/blog/ucs/img/char/char2/064.gif" width="16"><br><br><br><br></div></div>';
+
+            let insert_node_d;
+            insert_node_d=iframe_doc.createElement('div');
+            insert_node_d.innerHTML=fomat_data;
+
+            if(ac_node.nodeType==3 &&
+               ac_node.parentNode.tagName=='P' && ac_node.parentNode.parentNode.tagName=='BODY'){
+                ac_node.parentNode.parentNode.insertBefore(insert_node_d, ac_node.parentNode.nextSibling);
+                d_before_after();
+                when_end(); } // d要素生成の条件 通常のP要素のテキストノードから作成
+
+            if(ac_node.tagName=='P' &&
+               ac_node.firstChild.tagName=='BR' && ac_node.parentNode.tagName=='BODY'){
+                ac_node.parentNode.insertBefore(insert_node_d, ac_node);
+                d_before_after();
+                when_end(); } // div要素生成の条件 空白行から作成
+
+            function d_before_after(){
+                if(insert_node_d==insert_node_d.parentNode.firstChild ||
+                   insert_node_d.previousElementSibling.firstChild.tagName !='BR'){
+                    insert_node_d.insertAdjacentHTML('beforebegin', '<p>\u00A0</p>');}
+                if(insert_node_d.nextElementSibling==null ||
+                   insert_node_d.nextElementSibling.firstChild.tagName !='BR'){
+                    insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');}
+                range.setEnd(insert_node_d, 0);
+                range.collapse();} // 生成したdiv要素の前後の空白行処理
+
+            function when_end(){
+                if(insert_node_d.nextElementSibling==insert_node_d.parentNode.lastChild){
+                    insert_node_d.insertAdjacentHTML('afterend', '<p>\u00A0</p>');
+                    iframe_html.scrollTop=iframe_html.scrollHeight;}} // 文末処理
+        } //「Q1」
+
+        if(sender==50){ //「Q2」
+            alert("Q2"); }
+
+        if(sender==51){ //「Q3」
+            alert("Q3"); }
+
+        if(sender==52){ //「Q4」
+            alert("Q4"); }
+
+        if(sender==53){ //「Q5」
+            alert("Q5"); }
+
+        if(sender==54){ //「Q6」
+            alert("Q6"); }
+
+        if(sender==55){ //「Q7」
+            alert("Q7"); }
+
+        if(sender==56){ //「Q8」
+            alert("Q6"); }
+
+        if(sender==57){ //「Q9」
+            alert("Q9"); }
+
+    } // set_mark()
+})
