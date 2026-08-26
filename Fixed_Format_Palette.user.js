@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name        Fixed Format Palette ⭐
 // @namespace        http://tampermonkey.net/
-// @version        6.9
+// @version        7.0
 // @description        編集枠に定型表示を自動記入するツール
 // @author        Ameba Blog User
-// @match        https://blog.ameba.jp/ucs/entry/srventry*
-// @exclude        https://blog.ameba.jp/ucs/entry/srventrylist.do*
+// @match        https://blog.ameba.jp/ucs/entry/srventryinsertinput.do*
+// @match        https://blog.ameba.jp/ucs/entry/srventryupdateinput.do*
 // @icon        https://www.google.com/s2/favicons?sz=64&domain=ameblo.jp
 // @grant        none
 // @updateURL        https://github.com/personwritep/Fixed_Format_Palette/raw/main/Fixed_Format_Palette.user.js
