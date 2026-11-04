@@ -75,7 +75,7 @@ function main(){
             if(iframe_doc){
                 if(!iframe_doc[listen]){
                     iframe_doc.addEventListener("keyup", check_key);
-                    iframe_doc[listen]='true'; }}
+                    iframe_doc[listen]=true; }}
 
             function check_key(event){
                 if(event.ctrlKey && event.keyCode==122){ // 「Ctrl + F11」Bankから貼付
