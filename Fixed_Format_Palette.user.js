@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Fixed Format Palette ⭐
 // @namespace        http://tampermonkey.net/
-// @version        7.0
+// @version        7.1
 // @description        編集枠に定型表示を自動記入するツール
 // @author        Ameba Blog User
 // @match        https://blog.ameba.jp/ucs/entry/srventryinsertinput.do*
@@ -12,6 +12,8 @@
 // @downloadURL        https://github.com/personwritep/Fixed_Format_Palette/raw/main/Fixed_Format_Palette.user.js
 // ==/UserScript==
 
+
+let listen=Symbol();
 
 let retry=0;
 let interval=setInterval(wait_target, 100);
@@ -70,7 +72,10 @@ function main(){
                 document.querySelector('.ffp_menu').remove(); }
 
             iframe_doc=editor_iframe.contentWindow.document;
-            iframe_doc.addEventListener("keyup", check_key);
+            if(iframe_doc){
+                if(!iframe_doc[listen]){
+                    iframe_doc.addEventListener("keyup", check_key);
+                    iframe_doc[listen]='true'; }}
 
             function check_key(event){
                 if(event.ctrlKey && event.keyCode==122){ // 「Ctrl + F11」Bankから貼付
@@ -89,6 +94,7 @@ function main(){
                     event.preventDefault(); }
 
             } // check_key()
+
         } //「通常表示」の場合
 
         else{ //「HTML表示」の場合
@@ -96,7 +102,9 @@ function main(){
             if(document.querySelector('.ffp_menu')){
                 document.querySelector('.ffp_menu').remove(); }
 
-            document.addEventListener("keyup", check_key_h);
+            if(!document[listen]){
+                document.addEventListener("keyup", check_key_h);
+                document[listen]='true'; }
 
             function check_key_h(event){
                 if(event.ctrlKey && event.keyCode==122){ // HTML表示で貼付操作をした場合
@@ -118,7 +126,9 @@ function main(){
                     event.preventDefault(); }
 
             } // check_key_h
+
         } //「HTML表示」の場合
+
     } // catch_key
 
 
@@ -126,8 +136,10 @@ function main(){
     function write_format(){
         disp_menu();
 
-        document.addEventListener("keydown", menu_key_0);
-        iframe_doc.addEventListener("keydown", menu_key_0);
+
+        document.onkeydown=menu_key_0;
+        iframe_doc.onkeydown=menu_key_0;
+
         function menu_key_0(event){
             if(event.keyCode==27 && mode==0){ //「Esc」
                 event.preventDefault();
@@ -193,10 +205,11 @@ function main(){
 
         disp_menu();
 
-        document.addEventListener("keydown", menu_key_1);
-        iframe_doc.addEventListener("keydown", menu_key_1);
-        function menu_key_1(event){
 
+        document.onkeydown=menu_key_1;
+        iframe_doc.onkeydown=menu_key_1;
+
+        function menu_key_1(event){
             bank=now_bank; //⏺️
 
             if(event.keyCode==27 && mode==1){ //「Esc」
@@ -240,7 +253,8 @@ function main(){
             document.querySelector('.CodeMirror textarea').blur(); });
 
 
-        document.addEventListener("keydown", menu_key_2);
+        document.onkeydown=menu_key_2;
+
         function menu_key_2(event){
 
             bank=now_bank; //⏺️
@@ -466,8 +480,11 @@ function main(){
         menu_pos();
 
 
-        iframe_doc.addEventListener("keydown", menu_roll);
-        document.addEventListener("keydown", menu_roll);
+        document.body.onkeydown=menu_roll;
+        let iframe_body=iframe_doc.body;
+        if(iframe_body){
+            iframe_body.onkeydown=menu_roll; }
+
         function menu_roll(event){
             if(event.keyCode==40 && mode>-1 && mode<3){ //「⇩」
                 event.preventDefault();
@@ -710,7 +727,9 @@ function main(){
                 "　　(n)は同名のファイルがある場合の連番です");
             ffp_input.click(); }
 
-        ffp_input.addEventListener("change", function(){
+        ffp_input.onchange=backup;
+
+        function backup(){
             if(!(ffp_input.value)) return; // ファイルが選択されない場合
             let file_list=ffp_input.files;
             if(!file_list) return; // ファイルリストが選択されない場合
@@ -728,7 +747,7 @@ function main(){
                 }};
 
             mode=-1;
-            menu_end(); });
+            menu_end(); }
 
 
         ffp_color.value=color_data;
